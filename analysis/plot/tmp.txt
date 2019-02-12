@@ -1,0 +1,17 @@
+
+	G N U P L O T
+	Version 5.3 patchlevel 0    last modified 2019-01-08 
+
+	Copyright (C) 1986-1993, 1998, 2004, 2007-2018
+	Thomas Williams, Colin Kelley and many others
+
+	gnuplot home:     http://www.gnuplot.info
+	mailing list:     gnuplot-beta@lists.sourceforge.net
+	faq, bugs, etc:   type "help FAQ"
+	immediate help:   type "help"  (plot window: hit 'h')
+
+Terminal type is now 'x11'
+gnuplot> 
+gnuplot> 
+gnuplot> 
+gnuplot> 

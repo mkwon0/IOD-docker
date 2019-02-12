@@ -1,0 +1,12 @@
+[global]
+ioengine=libaio
+direct=1
+size=4g
+group_reporting
+filename=/mnt/nvme0n1/text
+bs=4k
+iodepth=32
+
+[fill-32x1]
+description=fill-32x1
+rw=write

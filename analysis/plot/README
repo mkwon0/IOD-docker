@@ -1,0 +1,7 @@
+install gv
+yum install -y xdg-utils gnuplot
+
+
+
+#### vi ~/.bashrc
+GDFONTPATH="/usr/share/fonts/msttcore"

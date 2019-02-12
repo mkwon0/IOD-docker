@@ -1,0 +1,16 @@
+FROM ubuntu:14.04
+
+RUN apt-get update
+RUN apt-get -y install curl
+
+RUN curl -s http://packages.elasticsearch.org/GPG-KEY-elasticsearch | apt-key add -
+RUN echo "deb http://packages.elasticsearch.org/elasticsearch/1.0/debian stable main" > /etc/apt/sources.list.d/e
+lasticsearch.list
+RUN apt-get update
+
+RUN apt-get install -y graphite-carbon
+RUN echo "CARBON_CACHE_ENABLED=true" > /etc/default/graphite-carbon
+
+RUN apt-get install -y graphite-web apache2 apache2-mpm-worker libapache2-mod-wsgi
+RUN sudo -u _graphite graphite-manage syncdb --noinput
+RUN rm -f /etc/apache2/sites-enabled/000-default.conf

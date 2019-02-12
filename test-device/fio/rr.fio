@@ -1,0 +1,15 @@
+[global]
+ioengine=libaio
+direct=1
+size=16g
+group_reporting
+thread
+filename=/dev/nvme0n1
+
+[rr-32x32]
+stonewall
+rw=randread
+bs=4k
+iodepth=32
+numjobs=32
+runtime=60
