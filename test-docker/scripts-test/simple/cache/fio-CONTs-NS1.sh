@@ -8,8 +8,8 @@ ARR_BS=(4k 16k 64k)
 LOG_MSEC=100
 
 ## Test parameters
-MIN_NUM_CONT=2
-MAX_NUM_CONT=5
+MIN_NUM_CONT=7
+MAX_NUM_CONT=7
 DEV=nvme3n
 DEV_ID=1
 SRC_VOL=resource
