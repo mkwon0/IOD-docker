@@ -69,7 +69,7 @@ func_simple()
 						done
 					done
 
-					func_check_done()
+					func_check_done
                     nvme flush /dev/nvme3n{1..4}
 					echo 3 > /proc/sys/vm/drop_caches
 				done

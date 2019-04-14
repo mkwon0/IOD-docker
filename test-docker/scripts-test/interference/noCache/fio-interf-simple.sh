@@ -19,7 +19,7 @@ ARR_DURATION=(60000 45000 30000 15000)
 ARR_OFFSET=(0 1 2 3)
 
 ARR_JOB=(read randread write randwrite)
-ARR_QD=(4)
+ARR_QD=(16)
 ARR_BS=(4k) 
 LOG_MSEC=100
 ## Test parameters
