@@ -41,13 +41,14 @@ func_simple()
 				SUMMARY_PATH=/mnt/data/${SRC_VOL}/swap-2G/${JOB_TYPE}-QD${QD}-BS${BS}/summary
 				TIMELOG_PATH=/mnt/data/${SRC_VOL}/swap-2G/${JOB_TYPE}-QD${QD}-BS${BS}/timelog
 				STAT_PATH=/mnt/data/${SRC_VOL}/swap-2G/${JOB_TYPE}-QD${QD}-BS${BS}/dockerstat
+				SWAP_PATH=/mnt/data/${SRC_VOL}/swap-2G/${JOB_TYPE}-QD${QD}-BS${BS}/swap
                 mkdir -p $SUMMARY_PATH $TIMELOG_PATH $STAT_PATH
 
 				for numcont in $(seq $MIN_NUM_CONT $MAX_NUM_CONT); do
 					TOTAL_NUM_CONT=$((2**$numcont))
 					NUM_CONT=$(($TOTAL_NUM_CONT/4))
 					DATE_FIO=$(date --date="3 minutes" +"%Y%m%d%H%M.%S")
-	
+
 					for NS in $(seq 0 3); do
 						DEV_ID=$(($NS+1))
 						start=$(($NUM_CONT*$NS+1))
@@ -59,8 +60,11 @@ func_simple()
 							FILE_NAME=${DEV}${DEV_ID}-cont${NUM_CONT}ID${CONT_ID}
 							LOG_FILE=${SUMMARY_PATH}/$FILE_NAME
 							STAT_FILE=${STAT_PATH}/${FILE_NAME}.stat
+							SWAP_FILE=${SWAP_PATH}/${FILE_NAME}.swap
 							SUMMARY_FILE=${SUMMARY_PATH}/${FILE_NAME}.summary
-
+							
+							PID=$(docker inspect --format={{.State.Pid}} ID${CONT_ID})
+							stat-per-process $PID 10 $RUN_TIME $SWAP_FILE | at $DATE_FIO
 							docker exec -d ID${CONT_ID} bash -c "fio --name ${DEV}${DEV_ID}-cont${NUM_CONT}ID${INTERNAL_ID} \
 								--thread=1 --ioengine=libaio --iodepth=$QD --rw=$JOB_TYPE --bs=$BS --time_based \
 								--runtime=$RUN_TIME --filename=/dev/${DEV}${DEV_ID} --output=$SUMMARY_FILE \
