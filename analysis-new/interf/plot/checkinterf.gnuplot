@@ -12,7 +12,7 @@ set style line 81 lt 0 lc rgb '#808080' lw 1
 set grid back ls 81
 
 ## Target specific variables
-ARR_JOB_TYPE="write randwrite"
+ARR_JOB_TYPE="read randread write randwrite"
 ARR_TARGET_TYPE="bw lat"
 ARR_NS="1"
 
@@ -22,8 +22,8 @@ XLABEL="Timeline (ms)"
 INPUT_PATH_SINGLE="/mnt/data/resource/NS1-noCache-60s"
 INPUT_PATH_CONCUR="/mnt/data/resource/Interf-noCache"
 OUTPUT_PATH="/mnt/data/resource/Interf-noCache"
-QD="4"
-BS="64k"
+QD="1"
+BS="4k"
 
 ## Page info
 Y1COLOR="#000000"
