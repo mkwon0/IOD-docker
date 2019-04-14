@@ -1,0 +1,15 @@
+[global]
+bs=${BSIZE}
+iodepth=${DEPTH}
+direct=1
+ioengine=libaio
+randrepeat=0
+time_based
+filesize=2G
+per_job_logs=1
+
+[job]
+rw=${RW}
+runtime=40
+filename=/dev/nvme${DEVN}n${NSN}
+name=${RW}
