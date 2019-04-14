@@ -16,10 +16,10 @@
 ## FIO parameters
 ARR_RUN_TIME=(60 45 30 15)
 ARR_DURATION=(60000 45000 30000 15000)
-ARR_OFFSET=(1 2 3)
+ARR_OFFSET=(0 1 2 3)
 
-ARR_JOB=(read write randread randwrite)
-ARR_QD=(1)
+ARR_JOB=(read randread write randwrite)
+ARR_QD=(4)
 ARR_BS=(4k) 
 LOG_MSEC=100
 ## Test parameters
@@ -32,15 +32,16 @@ func_simple()
 		for BS in "${ARR_BS[@]}";do
 			for QD in "${ARR_QD[@]}"; do
 				for OFFSET in "${ARR_OFFSET[@]}";do
+					START_ID=$(($OFFSET+1))
 					ARR_DATE=($(date --date="180 seconds" +"%Y%m%d%H%M.%S") $(date --date="195 seconds" +"%Y%m%d%H%M.%S") $(date --date="210 seconds" +"%Y%m%d%H%M.%S") $(date --date="225 seconds" +"%Y%m%d%H%M.%S"))
 					for NS in $(seq 1 4); do
 						DEV_ID=$(($NS+$OFFSET))
 						if [ $DEV_ID -gt 4 ]; then
 							DEV_ID=$(($DEV_ID%4))
 						fi
-						SUMMARY_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${DEV_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/summary
-						LOG_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${DEV_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/timelog
-						STAT_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${DEV_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/dockerstat
+						SUMMARY_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${START_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/summary
+						LOG_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${START_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/timelog
+						STAT_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${START_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/dockerstat
 						mkdir -p $SUMMARY_PATH $LOG_PATH $STAT_PATH
 
 						ARR_ID=$(($NS-1))
@@ -63,7 +64,7 @@ func_simple()
 						timeToWait=$(echo "$endTime - $startTime"|bc)
 						sleep $timeToWait
 
-						BLKTRACE_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${DEV_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/blktrace
+						BLKTRACE_PATH=/mnt/data/${SRC_VOL}/Interf-noCache/startNS${START_ID}/${JOB_TYPE}-QD${QD}-BS${BS}/blktrace
 						mkdir -p $BLKTRACE_PATH
 						BLKTRACE_FILE=${BLKTRACE_PATH}/${DEV}${DEV_ID}-cont1ID1.blktrace
 						blktrace -d /dev/${DEV}${DEV_ID} -w ${ARR_RUN_TIME[$ARR_ID]} -D $BLKTRACE_PATH > $BLKTRACE_FILE 2>&1 & 

@@ -18,7 +18,7 @@ ARR_RUN_TIME=(60 45 30 15)
 ARR_DURATION=(60000 45000 30000 15000)
 
 ARR_JOB=(read write randread randwrite)
-ARR_QD=(1)
+ARR_QD=(16)
 ARR_BS=(4k) 
 LOG_MSEC=100
 ## Test parameters
