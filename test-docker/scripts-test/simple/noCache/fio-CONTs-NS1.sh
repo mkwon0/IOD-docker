@@ -3,9 +3,8 @@
 ## FIO parameters
 RUN_TIME=15
 ARR_JOB=(read write randread randwrite)
-ARR_QD=(4 16 32 64)
-ARR_BS=(4k 16k 32k 64k)
-LOG_MSEC=100
+ARR_QD=(256 512 1024 2048)
+ARR_BS=(4k 16k 32k 64k 128k 256k 512k 1024k)
 
 ## Test parameters
 MIN_NUM_CONT=0
@@ -22,8 +21,6 @@ func_simple()
 			for QD in "${ARR_QD[@]}";do
 				mkdir -p /mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}
 				mkdir -p /mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/summary
-				mkdir -p /mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/timelog
-				mkdir -p /mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/dockerstat
 				mkdir -p /mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/blktrace
 				
 				for numcont in $(seq $MIN_NUM_CONT $MAX_NUM_CONT); do
@@ -31,15 +28,12 @@ func_simple()
 					DATE_FIO=$(date --date="3 minutes" +"%Y%m%d%H%M.%S")
 
 					for CONT_ID in $(seq 1 $NUM_CONT); do
-						LOG_FILE=/mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/timelog/${DEV}${DEV_ID}-cont${NUM_CONT}ID${CONT_ID}
 						STAT_FILE=/mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/dockerstat/${DEV}${DEV_ID}-cont${NUM_CONT}ID${CONT_ID}.stat
 						SUMMARY_FILE=/mnt/data/${SRC_VOL}/NS1-noCache/NS1/${JOB_TYPE}-QD${QD}-BS${BS}/summary/${DEV}${DEV_ID}-cont${NUM_CONT}ID${CONT_ID}.summary
 
 						docker exec -d ID${CONT_ID} bash -c "fio --name cont${NUM_CONT}ID${CONT_ID} --thread=1 \
 							--ioengine=libaio --iodepth=$QD --rw=$JOB_TYPE --bs=$BS --time_based --direct=1 \
-							--runtime=$RUN_TIME --filename=/dev/${DEV}${DEV_ID} \
-							--output=$SUMMARY_FILE --log_avg_msec=$LOG_MSEC --write_lat_log=$LOG_FILE --write_bw_log=$LOG_FILE --write_iops_log=$LOG_FILE | at $DATE_FIO"
-						docker exec -d ID${CONT_ID} bash -c "dockerstat 10 15000 $STAT_FILE | at $DATE_FIO"
+							--runtime=$RUN_TIME --filename=/dev/${DEV}${DEV_ID} --output=$SUMMARY_FILE | at -t at $DATE_FIO"
 					done
 
 					## Blktrace scheduling
@@ -70,7 +64,7 @@ func_simple()
 		
 					sleep 20s
 					nvme flush /dev/nvme3n{1..4}
-					echo 3 > /proc/sys/vm/drop_caches
+#					echo 3 > /proc/sys/vm/drop_caches
 				done
 			done
 		done

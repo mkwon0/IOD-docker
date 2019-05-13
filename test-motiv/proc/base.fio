@@ -1,0 +1,10 @@
+[global]
+bs=64k
+iodepth=16
+direct=1
+thread=1
+ioengine=libaio
+randrepeat=0
+time_based
+runtime=15
+filesize=100G

@@ -3,7 +3,7 @@
 ## FIO parameters
 RUN_TIME=60
 ARR_JOB=(read randread write randwrite)
-ARR_QD=(4)
+ARR_QD=(16)
 ARR_BS=(4k)
 LOG_MSEC=100
 

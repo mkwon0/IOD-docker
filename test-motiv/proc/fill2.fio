@@ -1,0 +1,16 @@
+[global]
+bs=64k
+iodepth=16
+direct=1
+ioengine=sync
+
+[job1]
+rw=write
+fill_device=1
+filename=/dev/nvme1n1p1
+name=nvme1n1p1
+[job2]
+rw=write
+fill_device=1
+filename=/dev/nvme1n2p1
+name=nvme1n2p1
