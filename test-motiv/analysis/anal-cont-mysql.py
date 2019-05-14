@@ -21,7 +21,7 @@ def main():
 			for NUM_THREAD in ARR_NUM_THREAD:
 				lat_cont_id = []
 				for CONT_ID in range(1,NUM_THREAD+1): 
-					LOG_PATH = "/mnt/data/motiv/cont-mysql/NS"+str(NUM_DEV)+"/all/"+str(IO_TYPE)+"-"+str(NUM_THREAD)+"/sysbench"+str(CONT_ID)+".output"
+					LOG_PATH = "/mnt/data/motiv/cont-mysql/NS"+str(NUM_DEV)+"/"+str(IO_TYPE)+"-"+str(NUM_THREAD)+"/sysbench"+str(CONT_ID)+".output"
 					with open(LOG_PATH) as f:
 						f.seek(0)
 						for line in f:
