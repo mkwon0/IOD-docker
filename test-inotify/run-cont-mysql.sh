@@ -145,52 +145,53 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		#### Docker initialization
 		docker_remove
 		nvme_flush
-		delPart
-#		nvme_format
-#		docker_init
-#		docker_mysql_gen	
+		nvme_format
+		docker_init
+		docker_mysql_gen	
+
+				
 
 		#### MySQL Prepare
-#		PREPARE_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
-#		done
-#		pid_waits PREPARE_PIDS[@]
-#		sync; echo 3 > /proc/sys/vm/drop_caches
+		PREPARE_PIDS=()
+		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+			HOST_PORT=$((3305+${CONT_ID}))
+			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
+		done
+		pid_waits PREPARE_PIDS[@]
+		sync; echo 3 > /proc/sys/vm/drop_caches
 
 		#### Inotifywait initilization
-#		INOTIFY_PIDS=()
-#		for DEV_ID in $(seq 1 $NUM_DEV); do
-#			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID}p1 &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}p1.log & INOTIFY_PIDS+=("$!")
-#		done
-#		sleep 5
+		INOTIFY_PIDS=()
+		for DEV_ID in $(seq 1 $NUM_DEV); do
+			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID}p1 &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}p1.log & INOTIFY_PIDS+=("$!")
+		done
+		sleep 5
 		
 		### Blktrace initialization
-#		BLKTRACE_PIDS=()
-#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
-#		done
-#		sleep 5
+		BLKTRACE_PIDS=()
+		for DEV_ID in $(seq 1 ${NUM_DEV}); do
+			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+		done
+		sleep 5
 
 		#### MySQL Run
-#		SYSBENCH_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
-#		done
-#		pid_waits SYSBENCH_PIDS[@]
-#		pid_kills BLKTRACE_PIDS[@]
-#		pid_kills INOTIFY_PIDS[@]
-#		sleep 5
-#			
-#		#### MySQL Cleanup
-#		CLEAN_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
-#		done
-#		pid_waits CLEAN_PIDS[@]	
-#		sleep 5
+		SYSBENCH_PIDS=()
+		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+			HOST_PORT=$((3305+${CONT_ID}))
+			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
+		done
+		pid_waits SYSBENCH_PIDS[@]
+		pid_kills BLKTRACE_PIDS[@]
+		pid_kills INOTIFY_PIDS[@]
+		sleep 5
+			
+		#### MySQL Cleanup
+		CLEAN_PIDS=()
+		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+			HOST_PORT=$((3305+${CONT_ID}))
+			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
+		done
+		pid_waits CLEAN_PIDS[@]	
+		sleep 5
 	done
 done
