@@ -2,8 +2,11 @@
 
 #### Parameters
 NUM_DEV=4
-RESULT_DIR=/mnt/data/motiv/cont-mysql/NS${NUM_DEV}/all
-ARR_NUM_THREAD=(4 16 64 256)
+#RESULT_DIR=/mnt/data/motiv/cont-mysql/NS${NUM_DEV}
+RESULT_DIR=/mnt/data/inotify/cont-mysql/NS${NUM_DEV}
+#ARR_NUM_THREAD=(4 16 64 256)
+#ARR_IO_TYPE=(oltp_read_only oltp_write_only)
+ARR_NUM_THREAD=(4)
 ARR_IO_TYPE=(oltp_read_only oltp_write_only)
 
 for i in $(seq 1 ${NUM_DEV}); do
@@ -156,12 +159,18 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		sync; echo 3 > /proc/sys/vm/drop_caches
 
 		#### Blktrace initialization
-		BLKTRACE_PIDS=()
-		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+#		BLKTRACE_PIDS=()
+#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
+#			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+#		done
+#		sleep 5
+
+		#### Inotifywait initilization
+		INOTIFY_PIDS=()
+		for DEV_ID in $(seq 1 $NUM_DEV); do
+			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID}p1 &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}p1.log & INOTIFY_PIDS+=("$!")
 		done
-		sleep 5
-	
+				
 		#### MySQL Run
 		SYSBENCH_PIDS=()
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
@@ -169,7 +178,8 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
 		done
 		pid_waits SYSBENCH_PIDS[@]
-		pid_kills BLKTRACE_PIDS[@]
+		pid_kills INOTIFY_PIDS[@]
+#		pid_kills BLKTRACE_PIDS[@]
 		sleep 5
 			
 		#### MySQL Cleanup
