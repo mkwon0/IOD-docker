@@ -145,7 +145,6 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		#### Docker initialization
 		docker_remove
 		nvme_flush
-		delPart
 #		nvme_format
 #		docker_init
 #		docker_mysql_gen	

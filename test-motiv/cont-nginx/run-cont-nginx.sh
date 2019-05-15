@@ -3,8 +3,7 @@
 #### Parameters
 NUM_DEV=$1
 RESULT_DIR=/mnt/data/motiv/cont-nginx/NS${NUM_DEV} && mkdir -p $RESULT_DIR
-ARR_NUM_THREAD=(4)
-#ARR_NUM_THREAD=(4 16 64 256)
+ARR_NUM_THREAD=(4 16 64 256)
 ARR_IO_TYPE=(AB)
 
 for i in $(seq 1 ${NUM_DEV}); do
@@ -141,11 +140,11 @@ main () {
 
 			#### Blktrace initialization
 			echo "$(tput setaf 4 bold)$(tput setab 7)Initialize blktrace and execute apachebench$(tput sgr 0)"	
-#			BLKTRACE_PIDS=()
-#			for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#				blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
-#			done
-#			sleep 5
+			BLKTRACE_PIDS=()
+			for DEV_ID in $(seq 1 ${NUM_DEV}); do
+				blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+			done
+			sleep 5
 		
 			#### nginx benchmark (ApacheBench) Run
 			APACHEBENCH_PIDS=()
@@ -157,9 +156,9 @@ main () {
 				
 				ab -v 2 -t 180 -n 1000000 -c 1000 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")	
 			done
-#			pid_waits APACHEBENCH_PIDS[@]
-#			pid_kills BLKTRACE_PIDS[@]
-#			sleep 5
+			pid_waits APACHEBENCH_PIDS[@]
+			pid_kills BLKTRACE_PIDS[@]
+			sleep 5
 		done
 	done
 }

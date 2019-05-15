@@ -147,15 +147,16 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		nvme_flush
 		nvme_format
 		docker_init
-		docker_mysql_gen	
-
-				
-
+		docker_mysql_gen
+		docker ps --format "{{.ID}}\t{{.Names}}" > ${INTERNAL_DIR}/container.id
+		for CONT_ID in $(seq $NUM_THREAD); do
+			docker inspect --format {{.GraphDriver.Data.WorkDir}} mysql${CONT_ID} >> ${INTERNAL_DIR}/container.id
+		done	
 		#### MySQL Prepare
 		PREPARE_PIDS=()
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 			HOST_PORT=$((3305+${CONT_ID}))
-			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
+			/usr/share/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
 		done
 		pid_waits PREPARE_PIDS[@]
 		sync; echo 3 > /proc/sys/vm/drop_caches
@@ -178,7 +179,7 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		SYSBENCH_PIDS=()
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 			HOST_PORT=$((3305+${CONT_ID}))
-			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
+			/usr/share/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
 		done
 		pid_waits SYSBENCH_PIDS[@]
 		pid_kills BLKTRACE_PIDS[@]
@@ -189,7 +190,7 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		CLEAN_PIDS=()
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 			HOST_PORT=$((3305+${CONT_ID}))
-			sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
+			/usr/share/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
 		done
 		pid_waits CLEAN_PIDS[@]	
 		sleep 5
