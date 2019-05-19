@@ -3,8 +3,8 @@
 #### Parameters
 NUM_DEV=$1
 RESULT_DIR=/mnt/data/motiv/cont-nginx/NS${NUM_DEV} && mkdir -p $RESULT_DIR
-ARR_NUM_THREAD=(4 16 64 256)
-ARR_IO_TYPE=(AB)
+ARR_NUM_THREAD=(64)
+ARR_IO_TYPE=(GET)
 
 for i in $(seq 1 ${NUM_DEV}); do
 	DEV_ID=$((${NUM_DEV}-$i+1))
@@ -139,12 +139,12 @@ main () {
 			file_gen
 
 			#### Blktrace initialization
-			echo "$(tput setaf 4 bold)$(tput setab 7)Initialize blktrace and execute apachebench$(tput sgr 0)"	
-			BLKTRACE_PIDS=()
-			for DEV_ID in $(seq 1 ${NUM_DEV}); do
-				blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
-			done
-			sleep 5
+#			echo "$(tput setaf 4 bold)$(tput setab 7)Initialize blktrace and execute apachebench$(tput sgr 0)"	
+#			BLKTRACE_PIDS=()
+#			for DEV_ID in $(seq 1 ${NUM_DEV}); do
+#				blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+#			done
+#			sleep 5
 		
 			#### nginx benchmark (ApacheBench) Run
 			APACHEBENCH_PIDS=()
@@ -153,11 +153,15 @@ main () {
 				OUTPUT_PERCENT=${INTERNAL_DIR}/ab${CONT_ID}.percent
 				OUTPUT_GNUPLOT=${INTERNAL_DIR}/ab${CONT_ID}.gnudata
 				OUTPUT_SUMMARY=${INTERNAL_DIR}/ab${CONT_ID}.summary
-				
-				ab -v 2 -t 180 -n 1000000 -c 1000 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")	
+
+				if [[ IO_TYPE -eq "GET" ]]; then
+					ab -t 180 -n 100000 -c 1 -s 600 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")
+				elif [[ IO_TYPE -eq "POST" ]]; then
+					ab -t 180 -n 100000 -c 1 -s 600 -p post_loc.txt -T application/json -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/ > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")
+				fi
 			done
 			pid_waits APACHEBENCH_PIDS[@]
-			pid_kills BLKTRACE_PIDS[@]
+#			pid_kills BLKTRACE_PIDS[@]
 			sleep 5
 		done
 	done
