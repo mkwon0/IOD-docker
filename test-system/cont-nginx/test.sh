@@ -2,19 +2,10 @@
 
 #### Parameters
 NUM_DEV=2
-TEST_TYPE=mysql
-RESULT_DIR=/mnt/data/tmp/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
+TEST_TYPE=nginx
+RESULT_DIR=/mnt/data/test/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
 ARR_NUM_THREAD=(1)
-#ARR_IO_TYPE=(oltp_read_only oltp_write_only)
-ARR_IO_TYPE=(oltp_read_only oltp_write_only)
-
-#### MySQL Parameters
-OPTIONS="--threads=1 --events=100000 --time=0 \
-         --table-size=1000000 --db-driver=mysql \
-         --mysql-host=0.0.0.0 \
-         --mysql-user=root --mysql-password=root \
-         --mysql-ignore-errors="all" \
-         --histogram "
+ARR_IO_TYPE=(GET)
 
 #### Docker Parameters
 DOCKER_ROOT=/mnt/nvme1n1/docker
@@ -84,40 +75,37 @@ docker_init() {
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		let REMAINED="(${CONT_ID} - 1) % 3"
 		let DEV_ID="$REMAINED + 2"
-		DIR=/mnt/nvme1n${DEV_ID}/mysql${CONT_ID}
+		DIR=/mnt/nvme1n${DEV_ID}/nginx${CONT_ID}
 		mkdir -p $DIR
 	done
     mkdir -p $DOCKER_ROOT
     systemctl start docker
 }
 
-docker_healthy() {
-	while [ "$(docker ps -a | grep -c starting)" = 1 ]; do
-		sleep 0.1;
+docker_nginx_gen() {
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((32769+${CONT_ID}))
+		let REMAINED="(${CONT_ID} - 1) % 3"
+		let DEV_ID="$REMAINED + 2"
+		docker run --name=nginx${CONT_ID} -v /mnt/nvme1n${DEV_ID}/nginx${CONT_ID}:/usr/suare/nginx/html -p ${HOST_PORT}:80 -d nginx:1.16
 	done
 }
 
-docker_mysql_gen() {
-	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		HOST_PORT=$((3305+${CONT_ID}))
+file_gen() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)generate files$(tput sgr 0)"
+    DD_PIDS=()
+    for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		let REMAINED="(${CONT_ID} - 1) % 3"
 		let DEV_ID="$REMAINED + 2"
-		docker run --name=mysql${CONT_ID} -m 500m -v /mnt/nvme1n${DEV_ID}/mysql${CONT_ID}:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_ROOT_HOST=% -p $HOST_PORT:3306 -d mysql/mysql-server:8.0
-	done
-	sleep 20
-	docker_healthy
-	sleep 30
-	
-	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		HOST_PORT=$((3305+${CONT_ID}))
-		docker exec mysql${CONT_ID} mysql -uroot -p'root' -e "ALTER USER root IDENTIFIED WITH mysql_native_password BY 'root';create database sbtest${CONT_ID};"
-	done
+        dd if=/dev/zero of=/mnt/nvme1n${DEV_ID}/nginx${CONT_ID}/file${CONT_ID} count=102400 bs=4096 > /dev/null & DD_PIDS+=("$!")
+    done
+    pid_waits DD_PIDS[@]
 }
 
 docker_info() {
 	docker ps --format "{{.ID}}\t{{.Names}}" > ${INTERNAL_DIR}/container.id
 	for CONT_ID in $(seq $NUM_THREAD); do
-		docker inspect --format {{.GraphDriver.Data.WorkDir}} mysql${CONT_ID} >> ${INTERNAL_DIR}/container.id
+		docker inspect --format {{.GraphDriver.Data.WorkDir}} nginx${CONT_ID} >> ${INTERNAL_DIR}/container.id
 	done
 }
 
@@ -131,60 +119,35 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		nvme_flush
 		nvme_format
 		docker_init
-		docker_mysql_gen
+		docker_nginx_gen
 		docker_info	
 
-		#### MySQL Prepare
-		PREPARE_PIDS=()
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
-		done
-		pid_waits PREPARE_PIDS[@]
+		#### nginx test preparation
+		file_gen
 		sync; echo 3 > /proc/sys/vm/drop_caches
 
 		### SYSTAP initilization
-#		SYSTAP_PIDS=()
-#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${INTERNAL_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
-#		done
-#		sleep 10
-
-		### Inotify initilization
-		INOTIFY_PIDS=()
+		SYSTAP_PIDS=()
 		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID} &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}.log & INOTIFY_PIDS+=("$!")
+			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${INTERNAL_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
 		done
+		sleep 10
 
-		### Blktrace initialization
-#		BLKTRACE_PIDS=()
-#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
-#		done
-#		sleep 5
-
-		#### MySQL Run
-		SYSBENCH_PIDS=()
+		#### nginx benchmark (ApacheBench) Run
+		APACHEBENCH_PIDS=()
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
+			HOST_PORT=$((32769+${CONT_ID}))
+			OUTPUT_PERCENT=${INTERNAL_DIR}/ab${CONT_ID}.percent
+			OUTPUT_GNUPLOT=${INTERNAL_DIR}/ab${CONT_ID}.gnudata
+			OUTPUT_SUMMARY=${INTERNAL_DIR}/ab${CONT_ID}.summary
+			if [[ IO_TYPE -eq "GET" ]]; then
+				ab -t 180 -n 100000 -c 1 -s 600 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")
+			fi
 		done
-		pid_waits SYSBENCH_PIDS[@]
-		sync; echo 3 > /proc/sys/vm/drop_caches
-#		pid_kills BLKTRACE_PIDS[@]
-#		pid_kills SYSTAP_PIDS[@]
-		pid_kills INOTIFY_PIDS[@]
+		pid_waits APACHEBENCH_PIDS[@]
+		pid_kills SYSTAP_PIDS[@]
 		sleep 5
 			
-		#### MySQL Cleanup
-		CLEAN_PIDS=()
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
-		done
-		pid_waits CLEAN_PIDS[@]	
-		sleep 5
-		
 		### SYSTAP initilization
 		SYSTAP_PIDS=()
 		for DEV_ID in $(seq 1 ${NUM_DEV}); do
@@ -194,7 +157,7 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		sleep 10
 
 		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			docker checkpoint create mysql${CONT_ID} checkpoint0 --leave-running 
+			docker checkpoint create nginx${CONT_ID} checkpoint0 --leave-running 
 		done
 				
 		pid_kills SYSTAP_PIDS[@]
