@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 ARR_NUM_DEV=[1, 2, 4]
-ARR_IO_TYPE=["read", "randread", "write", "randwrite"]
+ARR_IO_TYPE=["25-SS", "50-SS", "75-SS", "25-RR", "50-RR", "75-RR"]
 ARR_NUM_THREAD=[4, 16, 64, 256, 512]
 
 
@@ -32,7 +32,7 @@ def main():
 			avg_lat[NUM_DEV], avg_bw[NUM_DEV] = {}, {}
 			RESULT_DIR="/mnt/data/motiv/cont-fio/NS"+str(NUM_DEV)+"/"
 			for NUM_THREAD in ARR_NUM_THREAD:
-				INTERNAL_DIR=RESULT_DIR+str(IO_TYPE)+"-"+str(NUM_THREAD)+"/"
+				INTERNAL_DIR=RESULT_DIR+"SRxSW-"+str(IO_TYPE)+"-"+str(NUM_THREAD)+"/"
 				TIME_DIR=INTERNAL_DIR+"timelog/"
 
 				avg_bw[NUM_DEV][NUM_THREAD]="%.2f" % cal_avg(TIME_DIR,NUM_THREAD,"bw")

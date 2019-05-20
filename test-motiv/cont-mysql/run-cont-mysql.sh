@@ -72,7 +72,7 @@ nvme_format() {
         fi
     done
     sleep 1
-    genPart
+#    genPart
 }
 
 nvme_flush() {
@@ -145,7 +145,7 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		#### Docker initialization
 		docker_remove
 		nvme_flush
-#		nvme_format
+		nvme_format
 #		docker_init
 #		docker_mysql_gen	
 
