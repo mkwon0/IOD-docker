@@ -3,8 +3,8 @@
 #### Parameters
 NUM_DEV=$1
 RESULT_DIR=/mnt/data/motiv/cont-nginx/NS${NUM_DEV} && mkdir -p $RESULT_DIR
-ARR_NUM_THREAD=(4 16 64 256)
-ARR_IO_TYPE=(AB)
+ARR_NUM_THREAD=(64 256)
+ARR_IO_TYPE=(GET)
 
 for i in $(seq 1 ${NUM_DEV}); do
 	DEV_ID=$((${NUM_DEV}-$i+1))
@@ -154,7 +154,7 @@ main () {
 				OUTPUT_GNUPLOT=${INTERNAL_DIR}/ab${CONT_ID}.gnudata
 				OUTPUT_SUMMARY=${INTERNAL_DIR}/ab${CONT_ID}.summary
 				
-				ab -v 2 -t 180 -n 1000000 -c 1000 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")	
+				ab -t 180 -n 1000000 -c 1000 -s 600 -e $OUTPUT_PERCENT -g $OUTPUT_GNUPLOT http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")	
 			done
 			pid_waits APACHEBENCH_PIDS[@]
 			pid_kills BLKTRACE_PIDS[@]
