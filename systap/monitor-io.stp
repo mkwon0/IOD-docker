@@ -1,0 +1,30 @@
+#!/usr/bin/env stap
+
+
+//global program_name = @1
+global target_devname = @1
+global start
+
+function timestamp:long() {
+	return gettimeofday_us() - start
+}
+
+probe begin {
+	start = gettimeofday_us()
+	printf("%10s %5s %10s %1s %6s %7s %s\n",
+			"Time(us)", "PID", "COMM", "D", "BYTES", "us", "FILE")
+}
+
+probe vfs.read.return, vfs.write.return {
+
+	if (devname != target_devname)
+		next
+
+	time_delta = gettimeofday_us() - @entry(gettimeofday_us())
+	direction = name == "vfs.read" ? "R" : "W"
+	filename = devname . "," . reverse_path_walk($file->f_path->dentry)
+
+	printf("%10d %5d %10s %1s %6d %7d %s\n",
+			timestamp(), pid(), execname(), direction, $return, time_delta, filename)
+
+}
