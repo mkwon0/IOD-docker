@@ -131,73 +131,73 @@ for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		nvme_flush
 		nvme_format
 		docker_init
-		docker_mysql_gen
-		docker_info	
-
-		#### MySQL Prepare
-		PREPARE_PIDS=()
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
-		done
-		pid_waits PREPARE_PIDS[@]
-		sync; echo 3 > /proc/sys/vm/drop_caches
-
-		### SYSTAP initilization
+#		docker_mysql_gen
+#		docker_info	
+#
+#		#### MySQL Prepare
+#		PREPARE_PIDS=()
+#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+#			HOST_PORT=$((3305+${CONT_ID}))
+#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
+#		done
+#		pid_waits PREPARE_PIDS[@]
+#		sync; echo 3 > /proc/sys/vm/drop_caches
+#
+#		### SYSTAP initilization
+##		SYSTAP_PIDS=()
+##		for DEV_ID in $(seq 1 ${NUM_DEV}); do
+##			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${INTERNAL_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
+##		done
+##		sleep 10
+#
+#		### Inotify initilization
+#		INOTIFY_PIDS=()
+#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
+#			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID} &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}.log & INOTIFY_PIDS+=("$!")
+#		done
+#
+#		### Blktrace initialization
+##		BLKTRACE_PIDS=()
+##		for DEV_ID in $(seq 1 ${NUM_DEV}); do
+##			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+##		done
+##		sleep 5
+#
+#		#### MySQL Run
+#		SYSBENCH_PIDS=()
+#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+#			HOST_PORT=$((3305+${CONT_ID}))
+#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
+#		done
+#		pid_waits SYSBENCH_PIDS[@]
+#		sync; echo 3 > /proc/sys/vm/drop_caches
+##		pid_kills BLKTRACE_PIDS[@]
+##		pid_kills SYSTAP_PIDS[@]
+#		pid_kills INOTIFY_PIDS[@]
+#		sleep 5
+#			
+#		#### MySQL Cleanup
+#		CLEAN_PIDS=()
+#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+#			HOST_PORT=$((3305+${CONT_ID}))
+#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
+#		done
+#		pid_waits CLEAN_PIDS[@]	
+#		sleep 5
+#		
+#		### SYSTAP initilization
 #		SYSTAP_PIDS=()
 #		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${INTERNAL_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
+#			CHECK_DIR=${INTERNAL_DIR}/checkpoint && mkdir -p $CHECK_DIR
+#			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${CHECK_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
 #		done
 #		sleep 10
-
-		### Inotify initilization
-		INOTIFY_PIDS=()
-		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID} &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}.log & INOTIFY_PIDS+=("$!")
-		done
-
-		### Blktrace initialization
-#		BLKTRACE_PIDS=()
-#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+#
+#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+#			docker checkpoint create mysql${CONT_ID} checkpoint0 --leave-running 
 #		done
-#		sleep 5
-
-		#### MySQL Run
-		SYSBENCH_PIDS=()
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
-		done
-		pid_waits SYSBENCH_PIDS[@]
-		sync; echo 3 > /proc/sys/vm/drop_caches
-#		pid_kills BLKTRACE_PIDS[@]
+#				
 #		pid_kills SYSTAP_PIDS[@]
-		pid_kills INOTIFY_PIDS[@]
-		sleep 5
-			
-		#### MySQL Cleanup
-		CLEAN_PIDS=()
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			HOST_PORT=$((3305+${CONT_ID}))
-			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
-		done
-		pid_waits CLEAN_PIDS[@]	
-		sleep 5
-		
-		### SYSTAP initilization
-		SYSTAP_PIDS=()
-		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-			CHECK_DIR=${INTERNAL_DIR}/checkpoint && mkdir -p $CHECK_DIR
-			/home/mkwon/IOD-docker/systap/monitor-io.stp nvme1n${DEV_ID} &> ${CHECK_DIR}/systap-nvme1n${DEV_ID}.log & SYSTAP_PIDS+=("$!") 	
-		done
-		sleep 10
-
-		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-			docker checkpoint create mysql${CONT_ID} checkpoint0 --leave-running 
-		done
-				
-		pid_kills SYSTAP_PIDS[@]
 		
 	done
 done
