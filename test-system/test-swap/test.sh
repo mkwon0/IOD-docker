@@ -2,10 +2,14 @@
 
 #### Parameters
 NUM_DEV=4
+NUM_THREAD=256
+
 TEST_TYPE=mysql
-RESULT_DIR=/mnt/data/test/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
-ARR_NUM_THREAD=(1)
-ARR_IO_TYPE=(oltp_read_only oltp_write_only)
+
+ARR_SWAP_TYPE=(public)
+ARR_IO_TYPE=(oltp_read_only)
+#ARR_SWAP_TYPE=(private public)
+#ARR_IO_TYPE=(oltp_read_only oltp_write_only)
 
 #### MySQL Parameters
 OPTIONS="--threads=1 --events=10000 --time=0 \
@@ -63,6 +67,13 @@ docker_remove() {
     docker ps -aq | xargs --no-run-if-empty docker rm
     systemctl stop docker
 
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
+		if [ -e /mnt/nvme1n${DEV_ID}/swapfile${CONT_ID} ]; then
+			swapoff /mnt/nvme1n${DEV_ID}/swapfile${DEV_ID}
+		fi
+	done
+
     for DEV_ID in $(seq 1 ${NUM_DEV}); do
         if mountpoint -q /mnt/nvme1n${DEV_ID}; then
             umount /mnt/nvme1n${DEV_ID}
@@ -81,13 +92,50 @@ docker_init() {
     done
 
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		let REMAINED="(${CONT_ID} - 1) % 3"
-		let DEV_ID="$REMAINED + 2"
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 		DIR=/mnt/nvme1n${DEV_ID}/mysql${CONT_ID}
 		mkdir -p $DIR
 	done
     mkdir -p $DOCKER_ROOT
     systemctl start docker
+}
+
+swapfile_private_init() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Initializing private swapfile$(tput sgr 0)"
+
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1)) 
+		SWAPFILE=/mnt/nvme1n${DEV_ID}/swapfile${CONT_ID}
+		dd if=/dev/zero of=$SWAPFILE bs=1M count=1536 # 1.5G
+		chmod 600 $SWAPFILE
+		mkswap -L swapfile${CONT_ID} $SWAPFILE
+
+		echo "/mnt/nvme1n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,private 0 0" >> /etc/fstab
+	done
+
+	swapon -a
+	cat /proc/swaps | grep private
+
+	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
+}
+
+swapfile_public_init() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Initializing public swapfile$(tput sgr 0)"
+
+	SWAPFILE=/mnt/nvme1n1/swapfile1
+	let SWAPSIZE="1536 * $NUM_THREAD"
+	dd if=/dev/zero of=$SWAPFILE bs=1M count=$SWAPSIZE
+	chmod 600 $SWAPFILE
+	mkswap -L swapfile1 $SWAPFILE
+
+	echo "/mnt/nvme1n1/swapfile1 swap swap defaults,private 0 0" >> /etc/fstab
+
+	swapon -a
+	cat /proc/swaps | grep private
+
+	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
 }
 
 docker_healthy() {
@@ -99,11 +147,21 @@ docker_healthy() {
 docker_mysql_gen() {
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		HOST_PORT=$((3305+${CONT_ID}))
-		let REMAINED="(${CONT_ID} - 1) % 3"
-		let DEV_ID="$REMAINED + 2"
-		docker run --name=mysql${CONT_ID} -m 4M --memory-swap -1 -v /mnt/nvme1n${DEV_ID}/mysql${CONT_ID}:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_ROOT_HOST=% -p $HOST_PORT:3306 -d mysql/mysql-server:8.0
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
+		docker run --name=mysql${CONT_ID} \
+			--oom-kill-disable=true \
+			--memory "80m" --memory-swap -1 \
+			--memory-swappiness "100" \
+			 -v /mnt/nvme1n${DEV_ID}/mysql${CONT_ID}:/var/lib/mysql \
+			-e MYSQL_ROOT_PASSWORD=root -e MYSQL_ROOT_HOST=% \
+			-p $HOST_PORT:3306 -d mysql/mysql-server:8.0
 		DID=$(docker inspect mysql${CONT_ID} --format {{.Id}})
-		echo /root/swapfile0${CONT_ID} > /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
+		if [ $SWAP_TYPE == "private" ]; then
+			DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
+			echo /mnt/nvme1n${DEV_ID}/swapfile${CONT_ID} > /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
+		else
+			echo /mnt/nvme1n1/swapfile1 > /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
+		fi
 		cat /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
 	done
 	sleep 20
@@ -116,59 +174,59 @@ docker_mysql_gen() {
 	done
 }
 
-for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
-	for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
+docker_mysql_prepare() {
+	echo "$(tput setaf 4 bold)$(tput setab 7)Prepare MySQL$(tput sgr 0)"
+	PREPARE_PIDS=()
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((3305+${CONT_ID}))
+		/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
+	done
+	pid_waits PREPARE_PIDS[@]
+}
+
+docker_mysql_run() {
+	echo "$(tput setaf 4 bold)$(tput setab 7)Execute MySQL$(tput sgr 0)"
+	SYSBENCH_PIDS=()
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((3305+${CONT_ID}))
+		/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
+	done
+	pid_waits SYSBENCH_PIDS[@]
+	sleep 5
+}
+
+docker_mysql_cleanup() {
+	echo "$(tput setaf 4 bold)$(tput setab 7)Cleanup MySQL$(tput sgr 0)"
+	CLEAN_PIDS=()
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((3305+${CONT_ID}))
+		/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
+	done
+	pid_waits CLEAN_PIDS[@]	
+	sleep 5
+}
+
+for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
+	for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
+		RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
 		INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}
-#		rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
+		rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
 		
 		#### Docker initialization
-#		docker_remove
-#		nvme_flush
-#		nvme_format
-#		docker_init
+		docker_remove
+		nvme_flush
+		nvme_format
+		docker_init
+
+		if [ $SWAP_TYPE == "private" ]; then
+			swapfile_private_init
+		else
+			swapfile_public_init
+		fi
+
 		docker_mysql_gen	
-
-		#### MySQL Prepare
-#		PREPARE_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
-#		done
-#		pid_waits PREPARE_PIDS[@]
-#		sync; echo 3 > /proc/sys/vm/drop_caches
-
-		#### Inotifywait initilization
-#		INOTIFY_PIDS=()
-#		for DEV_ID in $(seq 1 $NUM_DEV); do
-#			inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme1n${DEV_ID} &> ${INTERNAL_DIR}/inotify-nvme1n${DEV_ID}.log & INOTIFY_PIDS+=("$!")
-#		done
-#		sleep 5
-		
-		### Blktrace initialization
-#		BLKTRACE_PIDS=()
-#		for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#			blktrace -d /dev/nvme1n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
-#		done
-#		sleep 5
-
-		#### MySQL Run
-#		SYSBENCH_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} run &> ${INTERNAL_DIR}/sysbench${CONT_ID}.output & SYSBENCH_PIDS+=("$!")		
-#		done
-#		pid_waits SYSBENCH_PIDS[@]
-#		pid_kills BLKTRACE_PIDS[@]
-#		pid_kills INOTIFY_PIDS[@]
-#		sleep 5
-			
-		#### MySQL Cleanup
-#		CLEAN_PIDS=()
-#		for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-#			HOST_PORT=$((3305+${CONT_ID}))
-#			/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} cleanup & CLEAN_PIDS+=("$!")
-#		done
-#		pid_waits CLEAN_PIDS[@]	
-#		sleep 5
+		docker_mysql_prepare
+		docker_mysql_run
+		docker_mysql_cleanup
 	done
 done
