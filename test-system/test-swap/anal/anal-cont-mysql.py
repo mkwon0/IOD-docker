@@ -9,8 +9,8 @@ import pandas as p
 
 regexHeader = re.compile('microbenchmark of ([\w\d/]+)')
 ARR_SWAP_TYPE=["public","private"]
-ARR_IO_TYPE=["oltp_read_only"]
-ARR_NUM_THREAD=[64]
+ARR_IO_TYPE=["oltp_read_only", "oltp_write_only"]
+ARR_NUM_THREAD=[16]
 
 #ARR_IO_TYPE=["oltp_read_only", "oltp_write_only"]
 #ARR_NUM_THREAD=[4, 16, 64, 256]
@@ -36,8 +36,8 @@ def main():
 									arr1.append(float(match.group(1)))
 
 			print(IO_TYPE+"-"+str(NUM_THREAD))
-			print("public "+str(np.mean(arr0)))
-			print("private "+str(np.mean(arr1)))
+			print("public "+str(np.mean(arr0))+" "+str(np.std(arr0)))
+			print("private "+str(np.mean(arr1))+" "+str(np.std(arr1)))
 
 # Begin of program
 if __name__ == "__main__":
