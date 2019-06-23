@@ -10,7 +10,7 @@ import pandas as p
 regexHeader = re.compile('microbenchmark of ([\w\d/]+)')
 ARR_SWAP_TYPE=["public","private"]
 ARR_IO_TYPE=["oltp_read_only", "oltp_write_only"]
-ARR_NUM_THREAD=[16]
+ARR_NUM_THREAD=[16, 64, 128]
 
 #ARR_IO_TYPE=["oltp_read_only", "oltp_write_only"]
 #ARR_NUM_THREAD=[4, 16, 64, 256]
