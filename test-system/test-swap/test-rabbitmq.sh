@@ -6,7 +6,7 @@ NUM_THREAD=16
 
 TEST_TYPE=rabbitmq
 
-ARR_SWAP_TYPE=(public)
+ARR_SWAP_TYPE=(private)
 ARR_IO_TYPE=(simple)
 
 #### Docker Parameters
@@ -54,30 +54,26 @@ nvme_flush() {
 docker_remove() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Start removing exisintg docker$(tput sgr 0)"
 	
-	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		docker network rm perf-test${CONT_ID}
-	done
-
     docker ps -aq | xargs --no-run-if-empty docker stop
     docker ps -aq | xargs --no-run-if-empty docker rm
-#    systemctl stop docker
+    systemctl stop docker
 
-#	MAX_THREAD=1024
-#	for CONT_ID in $(seq 1 ${MAX_THREAD}); do
-#		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
-#		if [ -e /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} ]; then
-#			swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
-#		fi
-#	done
-#
-#    for DEV_ID in $(seq 1 ${NUM_DEV}); do
-#        if mountpoint -q /mnt/nvme0n${DEV_ID}; then
-#            umount /mnt/nvme0n${DEV_ID}
-#        fi
-#        rm -rf /mnt/nvme0n${DEV_ID}
-#        mkdir -p /mnt/nvme0n${DEV_ID}
-#        wipefs --all --force /dev/nvme0n${DEV_ID}
-#    done
+	MAX_THREAD=1024
+	for CONT_ID in $(seq 1 ${MAX_THREAD}); do
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
+		if [ -e /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} ]; then
+			swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
+		fi
+	done
+
+    for DEV_ID in $(seq 1 ${NUM_DEV}); do
+        if mountpoint -q /mnt/nvme0n${DEV_ID}; then
+            umount /mnt/nvme0n${DEV_ID}
+        fi
+        rm -rf /mnt/nvme0n${DEV_ID}
+        mkdir -p /mnt/nvme0n${DEV_ID}
+        wipefs --all --force /dev/nvme0n${DEV_ID}
+    done
 }
 
 docker_init() {
@@ -137,54 +133,45 @@ swapfile_public_init() {
 docker_rabbitmq_gen() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Generating rabbitmq containers$(tput sgr 0)"
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		docker network create perf-test${CONT_ID}
-		HOST_PORT=$((15671+${CONT_ID}))
+		HOST_PORT=$((5671+${CONT_ID}))
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 
 		if [ $SWAP_TYPE == "private" ]; then
-			docker run -itd --network perf-test${CONT_ID} \ 
-				--name=rabbitmq${CONT_ID} \
+			docker run -itd --name=rabbitmq${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "80m" --memory-swap -1 \
+				--memory "4m" --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}" \
 				 -v /mnt/nvme0n${DEV_ID}/rabbitmq${CONT_ID}:/var/lib/rabbitmq \
-				-p $HOST_PORT:15672 \
+				-e RABBITMQ_DEFAULT_USER=test -e RABBITMQ_DEFAULT_PASS=test \
+				-p $HOST_PORT:5672 \
 				rabbitmq:3.7.15-management 
 		else
-			docker run -itd --network perf-test${CONT_ID} \
-				--name=rabbitmq${CONT_ID} \
+			docker run -itd --name=rabbitmq${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "80m" --memory-swap -1 \
+				--memory "4m" --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n1/swapfile1" \
 				 -v /mnt/nvme0n${DEV_ID}/rabbitmq${CONT_ID}:/var/lib/rabbitmq \
-				-p $HOST_PORT:15672 \
+				-e RABBITMQ_DEFAULT_USER=test -e RABBITMQ_DEFAULT_PASS=test \
+				-p $HOST_PORT:5672 \
 				rabbitmq:3.7.15-management 
 		fi
 		DID=$(docker inspect rabbitmq${CONT_ID} --format {{.Id}})
 		cat /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
 	done
-	sleep 10
+	sleep 60
 }
 
 docker_rabbitmq_run() {
 	echo "$(tput setaf 4 bold)$(tput setab 7)Execute Rabbitmq Benchmark$(tput sgr 0)"
+	RABBIT_PIDS=()
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		docker run -it --network perf-test${CONT_ID} \
-			--name rabbitmq-bench${CONT_ID} \
-			--mount type=bind,source=${INTERNAL_DIR},target=/mnt/data \
-			pivotalrabbitmq/perf-test:latest \
-			--uri amqp://rabbitmq${CONT_ID} --time 50 -o /mnt/data/output${CONT_ID}.output 
+		HOST_PORT=$((5671+${CONT_ID}))
+		/home/mkwon/src/rabbitmq-perf-test-2.8.1/bin/runjava com.rabbitmq.perf.PerfTest -h amqp://test:test@localhost:${HOST_PORT} --time 2 &> ${INTERNAL_DIR}/output${CONT_ID}.txt & RABBIT_PIDS+=("$!") 
 	done
-}
-
-docker_rabbitmq_wait() {
-	echo "$(tput setaf 4 bold)$(tput setab 7)Wait Rabbitmq Benchmark$(tput sgr 0)"
-	while docker ps -a | grep rabbitmq-bench | grep -c 'Up' > /dev/null;
-	do
-		sleep 1;
-	done
+	pid_waits RABBIT_PIDS[@]
+	sleep 5
 }
 
 for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
@@ -195,8 +182,8 @@ for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
 		
 		#### Docker initialization
 		docker_remove
-		nvme_flush
-		nvme_format
+#		nvme_flush
+#		nvme_format
 		docker_init
 
 		if [ $SWAP_TYPE == "private" ]; then
@@ -207,6 +194,5 @@ for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
 
 		docker_rabbitmq_gen
 		docker_rabbitmq_run
-		docker_rabbitmq_wait
 	done
 done
