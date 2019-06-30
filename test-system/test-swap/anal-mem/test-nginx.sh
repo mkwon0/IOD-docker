@@ -2,11 +2,11 @@
 
 #### Parameters
 NUM_DEV=4
-NUM_THREAD=64
+NUM_THREAD=1
 
 TEST_TYPE=nginx
 
-ARR_SWAP_TYPE=(private public)
+ARR_SWAP_TYPE=(public)
 ARR_IO_TYPE=(GET)
 
 #### Docker Parameters
@@ -57,14 +57,6 @@ docker_remove() {
     docker ps -aq | xargs --no-run-if-empty docker stop
     docker ps -aq | xargs --no-run-if-empty docker rm
     systemctl stop docker
-
-	MAX_THREAD=1024
-	for CONT_ID in $(seq 1 ${MAX_THREAD}); do
-		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
-		if [ -e /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} ]; then
-			swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
-		fi
-	done
 
     for DEV_ID in $(seq 1 ${NUM_DEV}); do
         if mountpoint -q /mnt/nvme0n${DEV_ID}; then
@@ -136,27 +128,10 @@ docker_nginx_gen() {
 		HOST_PORT=$((32769+${CONT_ID}))
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 
-		if [ $SWAP_TYPE == "private" ]; then
-			docker run -itd --name=nginx${CONT_ID} \
-				--oom-kill-disable=true \
-				--memory "4m" --memory-swap -1 \
-				--memory-swappiness "100" \
-				--memory-swapfile "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}" \
-				 -v /mnt/nvme0n${DEV_ID}/nginx${CONT_ID}:/usr/share/nginx/html \
-				-p $HOST_PORT:80 \
-				nginx:1.16
-		else
-			docker run -itd --name=nginx${CONT_ID} \
-				--oom-kill-disable=true \
-				--memory "4m" --memory-swap -1 \
-				--memory-swappiness "100" \
-				--memory-swapfile "/mnt/nvme0n1/swapfile1" \
-				 -v /mnt/nvme0n${DEV_ID}/nginx${CONT_ID}:/usr/share/nginx/html \
-				-p $HOST_PORT:80 \
-				nginx:1.16
-		fi
-		DID=$(docker inspect nginx${CONT_ID} --format {{.Id}})
-		cat /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
+		docker run -itd --name=nginx${CONT_ID} \
+			 -v /mnt/nvme0n${DEV_ID}/nginx${CONT_ID}:/usr/share/nginx/html \
+			-p $HOST_PORT:80 \
+			nginx:1.16
 	done
 	sleep 60
 }
@@ -167,42 +142,27 @@ docker_nginx_run() {
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		HOST_PORT=$((32769+${CONT_ID}))
 		OUTPUT_SUMMARY=${INTERNAL_DIR}/ab${CONT_ID}.summary
-		ab -t 60 -n 100000 -c 1 -s 6000 http://localhost:${HOST_PORT}/file${CONT_ID} > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")
+		ab -t 60 -n 100000 -c 100 -s 6000 http://localhost:${HOST_PORT}/ > $OUTPUT_SUMMARY 2>&1 & APACHEBENCH_PIDS+=("$!")
 	done
-	pid_waits APACHEBENCH_PIDS[@]
-}
-
-file_gen() {
-	echo "$(tput setaf 4 bold)$(tput setab 7)generate files$(tput sgr 0)"
-	DD_PIDS=()
-	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
-		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
-		dd if=/dev/zero of=/mnt/nvme0n${DEV_ID}/nginx${CONT_ID}/file${CONT_ID} count=1M bs=1024 > /dev/null & DD_PIDS+=("$!")
-	done
-	pid_waits DD_PIDS[@]
-	sync; echo 3 > /proc/sys/vm/drop_caches
+	pid_waits APACHEBENCH_PIDS[@] 
+	sleep 5
 }
 
 for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
 	for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
-		RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
-		INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}
-		rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
 		
 		#### Docker initialization
-		docker_remove
-		nvme_flush
-		nvme_format
-		docker_init
+#		docker_remove
+#		nvme_flush
+#		nvme_format
+#		docker_init
 
-		if [ $SWAP_TYPE == "private" ]; then
-			swapfile_private_init
-		else
-			swapfile_public_init
-		fi
-
-		file_gen
-		
+#		if [ $SWAP_TYPE == "private" ]; then
+#			swapfile_private_init
+#		else
+#			swapfile_public_init
+#		fi
+#
 		docker_nginx_gen
 		docker_nginx_run
 	done

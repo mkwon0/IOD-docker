@@ -2,12 +2,14 @@
 
 #### Parameters
 NUM_DEV=4
-NUM_THREAD=128
-
 TEST_TYPE=mysql
 
+MAX_MEM=520
 ARR_SWAP_TYPE=(private public)
-ARR_IO_TYPE=(oltp_read_only oltp_write_only)
+ARR_IO_TYPE=(oltp_write_only)
+ARR_NUM_THREAD=(16)
+ARR_MEM_RATIO=(10 20 30) 
+
 #ARR_SWAP_TYPE=(private public)
 #ARR_IO_TYPE=(oltp_read_only oltp_write_only)
 
@@ -150,13 +152,21 @@ docker_healthy() {
 docker_mysql_gen() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Generating mysql containers$(tput sgr 0)"
 	systemctl restart mysqld
+
+	if [ $MEM_RATIO -eq 0 ]; then
+		MEMSIZE="4m"
+	else
+		let MEMSIZE="$MAX_MEM * $MEM_RATIO / 100"
+		MEMSIZE=$( printf "%dm" $MEMSIZE )
+	fi
+
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		HOST_PORT=$((3306+${CONT_ID}))
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 		if [ $SWAP_TYPE == "private" ]; then
 			docker run --name=mysql${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "80m" --memory-swap -1 \
+				--memory $MEMSIZE --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}" \
 				 -v /mnt/nvme0n${DEV_ID}/mysql${CONT_ID}:/var/lib/mysql \
@@ -165,7 +175,7 @@ docker_mysql_gen() {
 		else
 			docker run --name=mysql${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "80m" --memory-swap -1 \
+				--memory $MEMSIZE --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n1/swapfile1" \
 				 -v /mnt/nvme0n${DEV_ID}/mysql${CONT_ID}:/var/lib/mysql \
@@ -218,29 +228,33 @@ docker_mysql_cleanup() {
 	sleep 5
 }
 
-for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
+for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
 	for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
-		RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
-		INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}
-		rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
-		
-		#### Docker initialization
-		docker_remove
-#		nvme_flush
-#		nvme_format
-		docker_init
+		for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
+			for MEM_RATIO in "${ARR_MEM_RATIO[@]}"; do 
+				RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
+				INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}-ratio${MEM_RATIO}
+				rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
+				
+				#### Docker initialization
+				docker_remove
+				nvme_flush
+				nvme_format
+				docker_init
 
-		if [ $SWAP_TYPE == "private" ]; then
-			swapfile_private_init
-		else
-			swapfile_public_init
-		fi
+				if [ $SWAP_TYPE == "private" ]; then
+					swapfile_private_init
+				else
+					swapfile_public_init
+				fi
 
-		sleep 10
-		docker_mysql_gen
-		sleep 10
-		docker_mysql_prepare
-		docker_mysql_run
-		docker_mysql_cleanup
+				sleep 10
+				docker_mysql_gen
+				sleep 10
+				docker_mysql_prepare
+				docker_mysql_run
+				docker_mysql_cleanup
+			done
+		done
 	done
 done
