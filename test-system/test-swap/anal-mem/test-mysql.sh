@@ -5,7 +5,7 @@ NUM_DEV=4
 TEST_TYPE=mysql
 
 ARR_SWAP_TYPE=(private)
-ARR_IO_TYPE=(oltp_read_only)
+ARR_IO_TYPE=(oltp_write_only)
 #ARR_SWAP_TYPE=(private public)
 #ARR_IO_TYPE=(oltp_read_only oltp_write_only)
 
