@@ -76,7 +76,7 @@ docker_remove() {
 	for CONT_ID in $(seq 1 ${MAX_THREAD}); do
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 		if [ -e /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} ]; then
-			swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
+			/home/mkwon/src/util-linux-swap/swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
 		fi
 	done
 
@@ -119,7 +119,7 @@ swapfile_private_init() {
 		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,private 0 0" >> /etc/fstab
 	done
 
-	swapon -a
+	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps | grep private
 
 	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
@@ -137,7 +137,7 @@ swapfile_public_init() {
 
 	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,private 0 0" >> /etc/fstab
 
-	swapon -a
+	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps | grep private
 
 	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak

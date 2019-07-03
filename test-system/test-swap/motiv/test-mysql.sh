@@ -6,9 +6,9 @@ TEST_TYPE=mysql
 
 MAX_MEM=520
 ARR_SWAP_TYPE=(multiple)
-ARR_IO_TYPE=(oltp_write_only)
-ARR_NUM_THREAD=(64)
-ARR_MEM_RATIO=(10)
+ARR_IO_TYPE=(oltp_read_only oltp_write_only)
+ARR_NUM_THREAD=(64 128)
+ARR_MEM_RATIO=(10 20 30)
 
 #### MySQL Parameters
 OPTIONS="--threads=1 --events=10000 --time=0 \
@@ -73,7 +73,7 @@ docker_remove() {
 	for CONT_ID in $(seq 1 ${MAX_THREAD}); do
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
 		if [ -e /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} ]; then
-			swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
+			/home/mkwon/src/util-linux-swap/swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
 		fi
 	done
 
@@ -114,9 +114,9 @@ swapfile_public_single_init() {
 	chmod 600 $SWAPFILE
 	mkswap -L swapfile1 $SWAPFILE
 
-	echo "/mnt/nvme0n1/swapfile1 swap swap defaults 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,pri=60 0 0" >> /etc/fstab
 
-	swapon -a
+	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps
 
 	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
@@ -134,12 +134,12 @@ swapfile_public_multiple_init() {
 		mkswap -L swapfile${DEV_ID} $SWAPFILE
 	done
 
-	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,pri=1 0 0" >> /etc/fstab
-	echo "/mnt/nvme0n2/swapfile2 swap swap defaults,pri=1 0 0" >> /etc/fstab
-	echo "/mnt/nvme0n3/swapfile3 swap swap defaults,pri=1 0 0" >> /etc/fstab
-	echo "/mnt/nvme0n4/swapfile4 swap swap defaults,pri=1 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,pri=60 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n2/swapfile2 swap swap defaults,pri=60 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n3/swapfile3 swap swap defaults,pri=60 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n4/swapfile4 swap swap defaults,pri=60 0 0" >> /etc/fstab
 
-	swapon -a
+	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps
 
 	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
@@ -282,9 +282,9 @@ for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
 				sleep 10
 				docker_mysql_prepare
 
-				anal_start
+#				anal_start
 				docker_mysql_run
-				anal_end
+#				anal_end
 
 				docker_mysql_cleanup
 			done
