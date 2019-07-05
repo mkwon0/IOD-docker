@@ -2,12 +2,14 @@
 
 #### Parameters
 NUM_DEV=4
-NUM_THREAD=16
 
 TEST_TYPE=rabbitmq
 
-ARR_SWAP_TYPE=(private)
+MAX_MEM=252
+ARR_SWAP_TYPE=(private public)
 ARR_IO_TYPE=(simple)
+ARR_NUM_THREAD=(64 128)
+ARR_MEM_RATIO=(30 20)
 
 #### Docker Parameters
 DOCKER_ROOT=/mnt/nvme0n1/docker
@@ -89,6 +91,15 @@ docker_init() {
 		mkdir -p $DIR
 	done
     mkdir -p $DOCKER_ROOT
+
+	iptables -t nat -N DOCKER
+    iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER
+    iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL ! --dst 172.17.0.1/8 -j DOCKER
+
+    service iptables save
+    service iptables restart
+    iptables -L
+
     systemctl start docker
 }
 
@@ -98,17 +109,17 @@ swapfile_private_init() {
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1)) 
 		SWAPFILE=/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
-		dd if=/dev/zero of=$SWAPFILE bs=1M count=1536 # 1.5G
+		dd if=/dev/zero of=$SWAPFILE bs=1M count=512 # 1.5G
 		chmod 600 $SWAPFILE
 		mkswap -L swapfile${CONT_ID} $SWAPFILE
 
-		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,private 0 0" >> /etc/fstab
+		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,cgroup 0 0" >> /etc/fstab
 	done
 
 	swapon -a
 	cat /proc/swaps | grep private
 
-	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
 	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
 }
 
@@ -116,22 +127,26 @@ swapfile_public_init() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Initializing public swapfile$(tput sgr 0)"
 
 	SWAPFILE=/mnt/nvme0n1/swapfile1
-	let SWAPSIZE="1536 * $NUM_THREAD"
+	let SWAPSIZE="512 * $NUM_THREAD"
 	dd if=/dev/zero of=$SWAPFILE bs=1M count=$SWAPSIZE
 	chmod 600 $SWAPFILE
 	mkswap -L swapfile1 $SWAPFILE
 
-	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,private 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,cgroup 0 0" >> /etc/fstab
 
 	swapon -a
 	cat /proc/swaps | grep private
 
-	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
 	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
 }
 
 docker_rabbitmq_gen() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Generating rabbitmq containers$(tput sgr 0)"
+	
+	let MEMSIZE="$MAX_MEM * $MEM_RATIO / 100"
+	MEMSIZE=$( printf "%dm" $MEMSIZE )
+
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		HOST_PORT=$((5671+${CONT_ID}))
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
@@ -139,7 +154,7 @@ docker_rabbitmq_gen() {
 		if [ $SWAP_TYPE == "private" ]; then
 			docker run -itd --name=rabbitmq${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "4m" --memory-swap -1 \
+				--memory $MEMSIZE --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}" \
 				 -v /mnt/nvme0n${DEV_ID}/rabbitmq${CONT_ID}:/var/lib/rabbitmq \
@@ -149,7 +164,7 @@ docker_rabbitmq_gen() {
 		else
 			docker run -itd --name=rabbitmq${CONT_ID} \
 				--oom-kill-disable=true \
-				--memory "4m" --memory-swap -1 \
+				--memory $MEMSIZE --memory-swap -1 \
 				--memory-swappiness "100" \
 				--memory-swapfile "/mnt/nvme0n1/swapfile1" \
 				 -v /mnt/nvme0n${DEV_ID}/rabbitmq${CONT_ID}:/var/lib/rabbitmq \
@@ -174,25 +189,29 @@ docker_rabbitmq_run() {
 	sleep 5
 }
 
-for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
-	for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
-		RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
-		INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}
-		rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
-		
-		#### Docker initialization
-		docker_remove
-#		nvme_flush
-#		nvme_format
-		docker_init
+for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
+	for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
+		for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
+			for MEM_RATIO in "${ARR_MEM_RATIO[@]}"; do
+				RESULT_DIR=/mnt/data/swap-${SWAP_TYPE}/cont-${TEST_TYPE} && mkdir -p ${RESULT_DIR}
+				INTERNAL_DIR=${RESULT_DIR}/${IO_TYPE}-${NUM_THREAD}-ratio${MEM_RATIO}
+				rm -rf $INTERNAL_DIR && mkdir -p $INTERNAL_DIR
+				
+				#### Docker initialization
+				docker_remove
+				nvme_flush
+				nvme_format
+				docker_init
 
-		if [ $SWAP_TYPE == "private" ]; then
-			swapfile_private_init
-		else
-			swapfile_public_init
-		fi
+				if [ $SWAP_TYPE == "private" ]; then
+					swapfile_private_init
+				else
+					swapfile_public_init
+				fi
 
-		docker_rabbitmq_gen
-		docker_rabbitmq_run
+				docker_rabbitmq_gen
+				docker_rabbitmq_run
+			done
+		done
 	done
 done

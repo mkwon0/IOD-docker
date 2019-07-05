@@ -5,17 +5,17 @@ NUM_DEV=4
 TEST_TYPE=mysql
 
 MAX_MEM=520
-ARR_SWAP_TYPE=(private)
-ARR_IO_TYPE=(oltp_read_only)
-ARR_NUM_THREAD=(1)
-ARR_MEM_RATIO=(10)
+ARR_SWAP_TYPE=(public private)
+ARR_MEM_RATIO=(30)
+ARR_IO_TYPE=(oltp_write_only oltp_read_only)
+ARR_NUM_THREAD=(64)
 
 #ARR_SWAP_TYPE=(private public)
 #ARR_IO_TYPE=(oltp_read_only oltp_write_only)
 
 #### MySQL Parameters
 OPTIONS="--threads=1 --events=10000 --time=0 \
-         --table-size=1000000 --db-driver=mysql \
+         --table-size=100000 --db-driver=mysql \
          --mysql-host=0.0.0.0 \
          --mysql-user=root --mysql-password=root \
          --mysql-ignore-errors="all" \
@@ -25,9 +25,59 @@ OPTIONS="--threads=1 --events=10000 --time=0 \
 DOCKER_ROOT=/mnt/nvme0n1/docker
 
 #### ftrace
-FTRACE_ARR=(do_swap_page add_to_swap try_to_unmap swap_writepage delete_from_swap_cache)
+FTRACE_ARR=(add_to_swap try_to_unmap swap_writepage delete_from_swap_cache lookup_swap_cache swapin_readahead read_swap_cache_async mark_page_accessed swap_free page_add_anon_rmap do_swap_page)
+
+swapfile_clean() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Format nvme block devices$(tput sgr 0)"
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1))
+		/home/mkwon/src/util-linux-swap/swapoff /mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
+	done
+
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1)) 
+		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,cgroup 0 0" >> /etc/fstab
+	done
+
+	/home/mkwon/src/util-linux-swap/swapon -a
+	cat /proc/swaps | grep private
+
+	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
+	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
+}
+
+docker_mysql_stop() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Stop the mysql containers$(tput sgr 0)"
+	sync; echo 3 > /proc/sys/vm/drop_caches
+
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((3306+${CONT_ID}))
+		docker exec mysql${CONT_ID} mysql -uroot -p'root' \
+		-e "flush query cache; SET GLOBAL innodb_old_blocks_time=250;SET GLOBAL innodb_old_blocks_pct = 5; SET GLOBAL innodb_max_dirty_pages_pct = 0"
+	done
+
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		docker stop mysql${CONT_ID}
+	done
+}
+
+docker_mysql_resume() {
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		docker start mysql${CONT_ID}		
+	done
+
+	sleep 10
+	docker_healthy
+
+	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
+		HOST_PORT=$((3306+${CONT_ID}))
+		docker exec mysql${CONT_ID} mysql -uroot -p'root' \
+		-e "SET GLOBAL innodb_old_blocks_time=0;SET GLOBAL innodb_old_blocks_pct = 37; SET GLOBAL innodb_max_dirty_pages_pct = 90"
+	done
+}
 
 pid_waits () {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Waiting the pids$(tput sgr 0)"
     PIDS=("${!1}")
     for pid in "${PIDS[*]}"; do
         wait $pid
@@ -35,6 +85,7 @@ pid_waits () {
 }
 
 pid_kills() {
+    echo "$(tput setaf 4 bold)$(tput setab 7)Kill the pids$(tput sgr 0)"
 	PIDS=("${!1}")
 	for pid in "${PIDS[*]}"; do
 		kill -15 $pid
@@ -103,7 +154,15 @@ docker_init() {
 		mkdir -p $DIR
 	done
     mkdir -p $DOCKER_ROOT
-    systemctl start docker
+
+	iptables -t nat -N DOCKER
+	iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER
+	iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL ! --dst 172.17.0.1/8 -j DOCKER
+	
+	service iptables save
+	service iptables restart
+	iptables -L
+	systemctl restart docker
 }
 
 swapfile_private_init() {
@@ -112,17 +171,19 @@ swapfile_private_init() {
 	for CONT_ID in $(seq 1 ${NUM_THREAD}); do
 		DEV_ID=$(($((${CONT_ID}-1))%${NUM_DEV}+1)) 
 		SWAPFILE=/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID}
-		dd if=/dev/zero of=$SWAPFILE bs=1M count=1536 # 1.5G
-		chmod 600 $SWAPFILE
-		mkswap -L swapfile${CONT_ID} $SWAPFILE
+		if [ ! -f $SWAPFILE ]; then
+			dd if=/dev/zero of=$SWAPFILE bs=1M count=512 # 0.5G
+			chmod 600 $SWAPFILE
+			mkswap -L swapfile${CONT_ID} $SWAPFILE
+		fi
 
-		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,private 0 0" >> /etc/fstab
+		echo "/mnt/nvme0n${DEV_ID}/swapfile${CONT_ID} swap swap defaults,cgroup 0 0" >> /etc/fstab
 	done
 
 	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps | grep private
 
-	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
 	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
 }
 
@@ -130,17 +191,17 @@ swapfile_public_init() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Initializing public swapfile$(tput sgr 0)"
 
 	SWAPFILE=/mnt/nvme0n1/swapfile1
-	let SWAPSIZE="1536 * $NUM_THREAD"
+	let SWAPSIZE="512 * $NUM_THREAD"
 	dd if=/dev/zero of=$SWAPFILE bs=1M count=$SWAPSIZE
 	chmod 600 $SWAPFILE
 	mkswap -L swapfile1 $SWAPFILE
 
-	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,private 0 0" >> /etc/fstab
+	echo "/mnt/nvme0n1/swapfile1 swap swap defaults,cgroup 0 0" >> /etc/fstab
 
 	/home/mkwon/src/util-linux-swap/swapon -a
 	cat /proc/swaps | grep private
 
-	awk '$4 !~/private/ {print }' /etc/fstab > /etc/fstab.bak
+	awk '$1 !~/swapfile/ {print }' /etc/fstab > /etc/fstab.bak
 	rm -rf /etc/fstab && mv /etc/fstab.bak /etc/fstab
 }
 
@@ -207,6 +268,7 @@ docker_mysql_prepare() {
 		/usr/local/bin/sysbench $IO_TYPE $OPTIONS --mysql-port=$HOST_PORT --mysql-db=sbtest${CONT_ID} prepare & PREPARE_PIDS+=("$!")
 	done
 	pid_waits PREPARE_PIDS[@]
+	sleep 5
 }
 
 docker_mysql_run() {
@@ -245,6 +307,27 @@ ftrace_end() {
 	echo 0 > function_profile_enabled
 }
 
+anal_start() {
+	echo "$(tput setaf 4 bold)$(tput setab 7)Enable analysis$(tput sgr 0)"
+	INOTIFY_PIDS=()
+	for DEV_ID in $(seq 1 $NUM_DEV); do
+		inotifywait -m -r --format 'Time:%T PATH:%w%f EVENTS:%,e' --timefm '%F %T' /mnt/nvme0n${DEV_ID} &> ${INTERNAL_DIR}/inotify-nvme0n${DEV_ID}.log & INOTIFY_PIDS+=("$!")
+	done
+
+	BLKTRACE_PIDS=()
+	for DEV_ID in $(seq 1 ${NUM_DEV}); do
+		blktrace -d /dev/nvme0n${DEV_ID} -w 600 -D ${INTERNAL_DIR} & BLKTRACE_PIDS+=("$!")
+	done
+	ftrace_start
+}
+
+anal_end() {
+	echo "$(tput setaf 4 bold)$(tput setab 7)Disable analysis$(tput sgr 0)"
+	ftrace_end
+	pid_kills BLKTRACE_PIDS[@]
+	pid_kills INOTIFY_PIDS[@]
+}
+
 for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
 	for IO_TYPE in "${ARR_IO_TYPE[@]}"; do
 		for SWAP_TYPE in "${ARR_SWAP_TYPE[@]}"; do
@@ -265,14 +348,15 @@ for NUM_THREAD in "${ARR_NUM_THREAD[@]}"; do
 					swapfile_public_init
 				fi
 
-				sleep 10
 				docker_mysql_gen
 				sleep 10
 				docker_mysql_prepare
-#				ftrace_start
-#				docker_mysql_run
-#				ftrace_end $INTERNAL_DIR
-#				docker_mysql_cleanup
+				
+				anal_start
+				docker_mysql_run
+				anal_end				
+
+				docker_mysql_cleanup
 			done
 		done
 	done

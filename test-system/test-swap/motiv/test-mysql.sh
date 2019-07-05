@@ -22,7 +22,7 @@ OPTIONS="--threads=1 --events=10000 --time=0 \
 DOCKER_ROOT=/mnt/nvme0n1/docker
 
 #### ftrace
-FTRACE_ARR=(add_to_swap try_to_unmap swap_writepage delete_from_swap_cache lookup_swap_cache swapin_readahead read_swap_cache_async mark_page_accessed swap_free page_add_anon_rmap)
+FTRACE_ARR=(add_to_swap try_to_unmap swap_writepage delete_from_swap_cache lookup_swap_cache swapin_readahead read_swap_cache_async mark_page_accessed swap_free page_add_anon_rmap do_swap_page)
 
 pid_waits () {
     PIDS=("${!1}")
@@ -102,14 +102,20 @@ docker_init() {
 		mkdir -p $DATA_DIR $LOG_DIR $CONF_DIR
 	done
     mkdir -p $DOCKER_ROOT
-    systemctl start docker
+
+	iptables -t nat -N DOCKER
+	iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER
+	iptables -t nat -A PREROUTING -m addrtype --dst-type LOCAL ! --dst 172.17.0.1/8 -j DOCKER
+	service iptables save
+	service iptables restart
+    systemctl restart docker
 }
 
 swapfile_public_single_init() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Initializing public swapfile$(tput sgr 0)"
 
 	SWAPFILE=/mnt/nvme0n1/swapfile1
-	let SWAPSIZE="1536 * $NUM_THREAD"
+	let SWAPSIZE="512 * $NUM_THREAD"
 	dd if=/dev/zero of=$SWAPFILE bs=1M count=$SWAPSIZE
 	chmod 600 $SWAPFILE
 	mkswap -L swapfile1 $SWAPFILE
@@ -126,7 +132,7 @@ swapfile_public_single_init() {
 swapfile_public_multiple_init() {
     echo "$(tput setaf 4 bold)$(tput setab 7)Initializing public swapfile$(tput sgr 0)"
 
-	let SWAPSIZE="1536 * $NUM_THREAD / 4"
+	let SWAPSIZE="512 * $NUM_THREAD / 4"
 	for DEV_ID in $(seq 1 $NUM_DEV); do
 		SWAPFILE=/mnt/nvme0n${DEV_ID}/swapfile${DEV_ID}
 		dd if=/dev/zero of=$SWAPFILE bs=1M count=$SWAPSIZE
@@ -177,8 +183,8 @@ docker_mysql_gen() {
 			-v /mnt/nvme0n${DEV_ID}/mysql-conf${CONT_ID}:/etc/mysql/conf.d \
 			-e MYSQL_ROOT_PASSWORD=root -e MYSQL_ROOT_HOST=% \
 			-p $HOST_PORT:3306 -d mysql/mysql-server:8.0
-		DID=$(docker inspect mysql-data${CONT_ID} --format {{.Id}})
-		cat /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
+#		DID=$(docker inspect mysql-data${CONT_ID} --format {{.Id}})
+#		cat /sys/fs/cgroup/memory/docker/$DID/memory.swapfile
 	done
 	sleep 20
 	docker_healthy
